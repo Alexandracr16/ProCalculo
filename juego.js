@@ -31,27 +31,36 @@ let respuestaCorrecta = "";
 let preguntaTexto = "";
 
 async function cargarPreguntaActiva() {
+  // Obtener el ID de la pregunta seleccionada
   const id = localStorage.getItem("preguntaActivaId");
-  if (!id) {
-    alert("⚠️ No se ha seleccionado una pregunta en los datos. Ve a datos.html y elige una.");
-    window.location.href = "datos.html";
-    return;
+  
+  if (id) {
+    try {
+      const pregunta = await DB.getPreguntaById(Number(id));
+      if (pregunta) {
+        // Keep the original response so special characters and digits are preserved
+        respuestaCorrecta = pregunta.respuesta.trim();
+        preguntaTexto = pregunta.pregunta;
+      } else {
+        // Si no se encuentra la pregunta, usar valores predeterminados
+        respuestaCorrecta = "CIENCIAS";
+        preguntaTexto = "Palabra del juego";
+      }
+    } catch (error) {
+      // En caso de error, usar valores predeterminados
+      respuestaCorrecta = "CIENCIAS";
+      preguntaTexto = "Palabra del juego";
+    }
+  } else {
+    // Si no hay ID seleccionado, usar valores predeterminados
+    respuestaCorrecta = "CIENCIAS";
+    preguntaTexto = "Palabra del juego";
   }
-
-  const pregunta = await DB.getPreguntaById(Number(id));
-  if (!pregunta) {
-    alert("❌ No se encontró la pregunta en la base de datos.");
-    window.location.href = "datos.html";
-    return;
-  }
-
-  preguntaTexto = pregunta.pregunta;
-  respuestaCorrecta = pregunta.respuesta.toUpperCase().trim();
 
   // Sincronizar longitud de letras
-  letrasIngresadas = Array(respuestaCorrecta.length).fill("_");
+  letrasIngresadas = Array(16).fill("_");
 
-  document.querySelector(".titulo").textContent = `Adivina: ${preguntaTexto}`;
+  document.querySelector(".titulo-pregunta").textContent = preguntaTexto;
 
   letras.forEach((el, i) => {
     if (i < respuestaCorrecta.length) {
@@ -72,8 +81,38 @@ async function cargarPreguntaActiva() {
 
 
 // Ejecutar al cargar la página
-document.addEventListener("DOMContentLoaded", cargarPreguntaActiva);
+document.addEventListener("DOMContentLoaded", async () => {
+  await cargarPreguntaActiva();
+  actualizarInterfazJuego();
+  
+  // Mostrar el grupo en el panel de información
+  const jugadoresLista = nombres.filter(n => n).join(", ");
+  turnoTxt.textContent = `Grupo: ${grupo}`;
+  
+  // Iniciar el tiempo automáticamente
+  iniciarTiempo();
+});
 
+// Función para actualizar la interfaz del juego
+function actualizarInterfazJuego() {
+  // Siempre mostrar 16 espacios
+  letrasIngresadas = Array(16).fill("_");
+
+  document.querySelector(".titulo-pregunta").textContent = preguntaTexto;
+
+  letras.forEach((el, i) => {
+    if (i < 16) {
+      el.textContent = "_";
+      el.style.display = "inline-block";
+    } else {
+      el.style.display = "none";
+    }
+  });
+
+  // Marcar la primera posición seleccionada
+  letraActual = 0;
+  letras[0].classList.add("letra-seleccionada");
+}
 
 // ----------------------
 // Obtener datos del grupo y jugadores desde URL
@@ -130,18 +169,10 @@ function detenerTiempo() {
   }
 }
 
-// ----------------------
-// Selección de jugador (sin iniciar tiempo todavía)
-// ----------------------
+// Los botones ahora son solo para mostrar los jugadores
 botones.forEach(btn => {
-  btn.addEventListener("click", () => {
-    jugadorActivo = btn.textContent;
-    turnoTxt.textContent = `Turno de: ${jugadorActivo}`;
-
-    // Visual: resaltar jugador activo
-    botones.forEach(b => b.classList.remove("jugador-activo"));
-    btn.classList.add("jugador-activo");
-  });
+  // Removemos el evento click
+  btn.style.cursor = 'default'; // Quitar el cursor pointer
 });
 
 // ----------------------
@@ -153,29 +184,32 @@ let letraActual = 0;
 // Permitir seleccionar posición haciendo clic
 letras.forEach((el, i) => {
   el.addEventListener("click", () => {
-    letraActual = i;
-    letras.forEach(l => l.classList.remove("letra-seleccionada"));
-    el.classList.add("letra-seleccionada");
+    if (!juegoFinalizado) {
+      letraActual = i;
+      letras.forEach(l => l.classList.remove("letra-seleccionada"));
+      el.classList.add("letra-seleccionada");
+    }
   });
 });
 
 // Escuchar teclas
 document.addEventListener("keydown", (e) => {
-  if (!jugadorActivo) {
-    alert("Selecciona un jugador antes de escribir.");
+  // Si el juego ya terminó, no permitir más entrada de letras
+  if (juegoFinalizado) {
+    e.preventDefault();
     return;
   }
 
-  const key = e.key.toUpperCase();
+  const key = e.key;
 
-  // Si es una letra válida
-  if (key.length === 1 && key.match(/[A-ZÑÁÉÍÓÚÜ]/)) {
+  // Si es un caracter imprimible (letra, número o especial) aceptarlo
+  if (key.length === 1 && !e.ctrlKey && !e.metaKey) {
     if (!intervalo) iniciarTiempo();
     letrasIngresadas[letraActual] = key;
     letras[letraActual].textContent = key;
 
     // Avanza automáticamente
-    letraActual = (letraActual + 1) % respuestaCorrecta.length;
+    letraActual = (letraActual + 1) % 16;
     verificarEstadoPalabra();
   }
 
@@ -188,33 +222,74 @@ document.addEventListener("keydown", (e) => {
 
   // Mover con flechas
   if (e.key === "ArrowRight") {
-    letraActual = (letraActual + 1) % respuestaCorrecta.length;
+    letraActual = (letraActual + 1) % 16;
   }
   if (e.key === "ArrowLeft") {
-    letraActual = (letraActual - 1 + respuestaCorrecta.length) % respuestaCorrecta.length;
+    letraActual = (letraActual - 1 + 16) % 16;
   }
 });
 
 function verificarEstadoPalabra() {
   if (!respuestaCorrecta) return;
 
+  let espaciosLlenos = true;
+  let cantidadAciertos = 0;
+  // Regex para detectar letras (incluye acentos y ñ)
+  const letterRegex = /[A-Za-zÀ-ÖØ-öø-ÿÑñÁÉÍÓÚáéíóúÜü]/;
+
   letras.forEach((letraEl, i) => {
     const letraIngresada = letrasIngresadas[i] || "_";
     if (letraIngresada === "_") {
-      letraEl.classList.remove("ok", "error");
-    } else if (letraIngresada === respuestaCorrecta[i]) {
-      letraEl.classList.add("ok");
-      letraEl.classList.remove("error");
+      espaciosLlenos = false;
+    }
+    if (i < respuestaCorrecta.length) {
+      const esperado = respuestaCorrecta[i];
+      if (letraIngresada === "_") {
+        letraEl.classList.remove("ok", "error");
+      } else {
+        // Comparación: letras insensible a mayúsculas, otros caracteres exactos
+        if (letterRegex.test(esperado)) {
+          if (letraIngresada.toUpperCase() === esperado.toUpperCase()) {
+            letraEl.classList.add("ok");
+            letraEl.classList.remove("error");
+            cantidadAciertos++;
+          } else {
+            letraEl.classList.add("error");
+            letraEl.classList.remove("ok");
+          }
+        } else {
+          if (letraIngresada === esperado) {
+            letraEl.classList.add("ok");
+            letraEl.classList.remove("error");
+            cantidadAciertos++;
+          } else {
+            letraEl.classList.add("error");
+            letraEl.classList.remove("ok");
+          }
+        }
+      }
     } else {
-      letraEl.classList.add("error");
-      letraEl.classList.remove("ok");
+      // Para espacios después de la respuesta correcta
+      letraEl.classList.remove("ok", "error");
     }
   });
 
-  // Verificar si todas las letras son correctas
-  const todasCorrectas = letrasIngresadas.every(
-    (letra, i) => letra === respuestaCorrecta[i]
-  );
+  // Si todos los espacios están llenos, detener el tiempo y mostrar resultados
+  if (espaciosLlenos && !juegoFinalizado) {
+    // Stop the timer and mark finished, then delegate display & save to mostrarResultadoFinal
+    detenerTiempo();
+    juegoFinalizado = true;
+    mostrarResultadoFinal();
+  }
+
+  // Verificar si todas las letras de la respuesta correcta están bien
+  const todasCorrectas = respuestaCorrecta.split('').every((esperado, i) => {
+    const ingresada = letrasIngresadas[i] || "";
+    if (letterRegex.test(esperado)) {
+      return ingresada.toUpperCase() === esperado.toUpperCase();
+    }
+    return ingresada === esperado;
+  });
 
   if (todasCorrectas && !juegoFinalizado) {
     detenerTiempo();
@@ -227,7 +302,7 @@ function verificarEstadoPalabra() {
 // ----------------------
 // Mostrar resultado final
 // ----------------------
-function mostrarResultadoFinal() {
+async function mostrarResultadoFinal() {
   letras.forEach((letraEl, index) => {
     const correcta = respuestaCorrecta[index] === letrasIngresadas[index];
     if (correcta) {
@@ -252,17 +327,27 @@ function mostrarResultadoFinal() {
       letrasHTML += `<span style='color: #ff3c3c; font-weight:bold;'>${letra}</span>`;
     }
   }
-  listaRegistros.innerHTML = `
-    <div class="registro-item">
-      <strong>Juego terminado</strong><br>
-      <span class="registro-meta">Jugador: ${jugadorActivo}</span><br>
-      <span class="registro-meta">Grupo: ${grupo}</span><br>
-      <span class="registro-meta">Aciertos: ${aciertos}/${respuestaCorrecta.length}</span><br>
-      <span class="registro-meta">Tiempo: ${tiempo} segundos</span><br>
-      <span class="registro-meta">Palabra: ${respuestaCorrecta}</span><br>
-      <span class="registro-meta">Letras: ${letrasHTML}</span>
-    </div>
-  `;
+  // Preparar datos para mostrar y guardar
+  const jugadoresLista = nombres.filter(n => n).join(", ");
+  const fecha = new Date().toISOString();
+
+  // No mostrar el registro detallado en la UI principal (se guarda en DB/localStorage)
+  listaRegistros.innerHTML = "";
+
+  // Mostrar caja compacta debajo del timer: sólo aciertos, tiempo y si lo logró
+  const contResultados = document.querySelector('.resultados-inmediatos');
+  if (contResultados) {
+    const logro = aciertos === respuestaCorrecta.length;
+    contResultados.innerHTML = `
+      <div class="resultado-compacto" style="background: rgba(0,0,0,0.35); padding: 12px; border-radius:8px; text-align:center; color:#fff;">
+        <div style="font-weight:700; margin-bottom:6px;">Aciertos: <span style="color:#3cff7a">${aciertos}</span> de ${respuestaCorrecta.length}</div>
+        <div style="margin-bottom:8px;">Tiempo final: <span style="color:#4f9cff; font-weight:700">${tiempo}</span> segundos</div>
+        <div style="font-size:1.1em; font-weight:800; color:${logro ? '#3cff7a' : '#ff3c3c'};">
+          ${logro ? '¡Lo lograste! 🎉' : 'No lo lograste, ¡vuelve a intentarlo! 💪'}
+        </div>
+      </div>
+    `;
+  }
 
   // Guardar en localStorage
   const posiciones = [];
@@ -275,16 +360,34 @@ function mostrarResultadoFinal() {
   }
   const resultado = {
     grupo,
-    jugador: jugadorActivo,
+    jugadores: jugadoresLista,
+    tiempo,
+    palabra: respuestaCorrecta,
+    aciertos: aciertos,
+    totalLetras: respuestaCorrecta.length,
+    fecha
+  };
+
+  // Guardar en IndexedDB (no bloquear la UI)
+  try {
+    await DB.addResultado(resultado);
+  } catch (error) {
+    console.error("Error al guardar en la base de datos:", error);
+  }
+
+  // Guardar en localStorage para mantener la tabla de registros (detalle)
+  const resultadoLocal = {
+    grupo,
+    jugadores: jugadoresLista,
     tiempo,
     palabra: respuestaCorrecta,
     ingresadas: letrasIngresadas.join(""),
     posiciones,
-    fecha: new Date().toISOString(),
+    fecha,
   };
 
   const juegos = JSON.parse(localStorage.getItem("juegos") || "[]");
-  juegos.push(resultado);
+  juegos.push(resultadoLocal);
   localStorage.setItem("juegos", JSON.stringify(juegos));
 }
 

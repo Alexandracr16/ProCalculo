@@ -3,7 +3,7 @@
 
 (function () {
   const DB_NAME = "JuegoCienciasDB";
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let dbInstance = null;
 
   function openDB() {
@@ -24,6 +24,12 @@
         if (!db.objectStoreNames.contains("movimientos")) {
           const os = db.createObjectStore("movimientos", { keyPath: "id", autoIncrement: true });
           os.createIndex("mesaId", "mesaId", { unique: false });
+        }
+        // store resultados: { id(auto), grupo, jugadores, tiempo, palabra, aciertos, fecha }
+        if (!db.objectStoreNames.contains("resultados")) {
+          const resultados = db.createObjectStore("resultados", { keyPath: "id", autoIncrement: true });
+          resultados.createIndex("grupo", "grupo");
+          resultados.createIndex("fecha", "fecha");
         }
       };
       req.onsuccess = (e) => {
@@ -140,6 +146,25 @@
     });
   }
 
+  // Resultados
+  async function addResultado(resultado) {
+    const store = await tx("resultados", "readwrite");
+    return new Promise((res, rej) => {
+      const r = store.add(resultado);
+      r.onsuccess = (e) => res(e.target.result);
+      r.onerror = (e) => rej(e.target.error);
+    });
+  }
+
+  async function getResultados() {
+    const store = await tx("resultados", "readonly");
+    return new Promise((res, rej) => {
+      const r = store.getAll();
+      r.onsuccess = (e) => res(e.target.result);
+      r.onerror = (e) => rej(e.target.error);
+    });
+  }
+
   // Exponer API globalmente
   window.DB = {
     openDB,
@@ -156,6 +181,9 @@
     getMesas,
     // movimientos
     addMovimiento,
-    getMovimientosByMesa
+    getMovimientosByMesa,
+    // resultados
+    addResultado,
+    getResultados
   };
 })();

@@ -65,9 +65,18 @@ async function eliminarPregunta(id) {
 }
 
 // Seleccionar pregunta para el juego
-function seleccionarPregunta(id) {
-  localStorage.setItem("preguntaActivaId", id);
-  alert("Pregunta seleccionada para la próxima mesa");
+async function seleccionarPregunta(id) {
+  try {
+    const pregunta = await DB.getPreguntaById(id);
+    if (pregunta) {
+      localStorage.setItem("preguntaActivaId", id);
+      if (confirm(`¿Quieres iniciar el juego con la palabra "${pregunta.respuesta}"?`)) {
+        window.location.href = "index.html";
+      }
+    }
+  } catch (error) {
+    alert("Error al seleccionar la pregunta");
+  }
 }
 
 // ----------------------
@@ -93,84 +102,81 @@ async function cargarMovimientos() {
     });
   }
 }
-function seleccionarPregunta(id) {
-  localStorage.setItem("preguntaActivaId", id);
-  alert("Pregunta seleccionada para la próxima mesa");
-}
+
 // Inicializar todo al cargar
 
-function mostrarJuegos() {
+async function mostrarJuegos() {
   const contAciertos = document.getElementById("tablaAciertos");
   const contFallas = document.getElementById("tablaFallas");
   contAciertos.innerHTML = "";
   contFallas.innerHTML = "";
 
-  const juegos = JSON.parse(localStorage.getItem("juegos") || "[]");
-  if (juegos.length === 0) {
-    contAciertos.innerHTML = "<p>No hay registros de juegos.</p>";
-    contFallas.innerHTML = "<p>No hay registros de juegos.</p>";
-    return;
-  }
+  try {
+    // Obtener todos los juegos de la base de datos
+    const juegos = await DB.getResultados();
 
-  // Crear tablas para aciertos y fallas
-  const crearTabla = (titulo) => {
-    const div = document.createElement("div");
-    div.innerHTML = `<h3>${titulo}</h3>`;
-    const table = document.createElement("table");
-    table.style.margin = "10px auto";
-    table.style.width = "95%";
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>Grupo</th>
-          <th>Jugadores</th>
-          <th>Jugador</th>
-          <th>Tiempo (s)</th>
-          <th>Palabra</th>
-          <th>Posición</th>
-          <th>Letra</th>
-          <th>Correcta</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    `;
-    div.appendChild(table);
-    return { div, tbody: table.querySelector("tbody") };
-  };
-
-  const aciertos = crearTabla("✅ ACIERTOS");
-  const fallas = crearTabla("❌ FALLAS");
-
-  const jugadoresRegistrados = localStorage.getItem("jugadores") || "-";
-
-  juegos.forEach(j => {
-    if (j.posiciones && Array.isArray(j.posiciones)) {
-      j.posiciones.forEach(pos => {
-        const fila = `
-          <tr>
-            <td>${j.grupo || "-"}</td>
-            <td>${jugadoresRegistrados}</td>
-            <td>${j.jugador}</td>
-            <td>${j.tiempo}</td>
-            <td>${j.palabra}</td>
-            <td>${pos.posicion}</td>
-            <td style="font-weight:bold; color:${pos.correcta ? '#3cff7a' : '#ff3c3c'}">${pos.letra || '_'}</td>
-            <td>${pos.correcta ? '✅' : '❌'}</td>
-          </tr>
-        `;
-        if (pos.correcta) aciertos.tbody.innerHTML += fila;
-        else fallas.tbody.innerHTML += fila;
-      });
+    if (!juegos || juegos.length === 0) {
+      contAciertos.innerHTML = "<p>No hay registros de juegos.</p>";
+      contFallas.innerHTML = "<p>No hay registros de juegos.</p>";
+      return;
     }
-  });
 
-  contAciertos.appendChild(aciertos.div);
-  contFallas.appendChild(fallas.div);
+    // Función para crear tabla
+    const crearTabla = (titulo) => {
+      const div = document.createElement("div");
+      div.innerHTML = `<h3>${titulo}</h3>`;
+      const table = document.createElement("table");
+      table.style.margin = "10px auto";
+      table.style.width = "95%";
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Grupo</th>
+            <th>Jugadores</th>
+            <th>Tiempo (s)</th>
+            <th>Palabra</th>
+            <th>Aciertos</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+      div.appendChild(table);
+      return div;
+    };
+
+    // Crear tablas
+    const tablaAciertos = crearTabla("Aciertos ✅");
+    const tablaFallas = crearTabla("Fallas ❌");
+
+    juegos.forEach(j => {
+      const esAcierto = j.aciertos === j.totalLetras;
+      const fila = `
+        <tr>
+          <td>${j.grupo || "-"}</td>
+          <td>${j.jugadores || "-"}</td>
+          <td>${j.tiempo || "-"}</td>
+          <td><span style="color: ${esAcierto ? '#28a745' : '#dc3545'}">${j.palabra || "-"}</span></td>
+          <td>${j.aciertos}/${j.totalLetras}</td>
+        </tr>
+      `;
+
+      if (esAcierto) tablaAciertos.querySelector("tbody").innerHTML += fila;
+      else tablaFallas.querySelector("tbody").innerHTML += fila;
+    });
+
+    contAciertos.appendChild(tablaAciertos);
+    contFallas.appendChild(tablaFallas);
+
+  } catch (err) {
+    console.error('Error mostrando juegos:', err);
+    contAciertos.innerHTML = "<p>Error al cargar registros.</p>";
+    contFallas.innerHTML = "<p>Error al cargar registros.</p>";
+  }
 }
 
 
-document.addEventListener("DOMContentLoaded", () => {
-  mostrarJuegos();
+document.addEventListener("DOMContentLoaded", async () => {
+  await mostrarJuegos();
   // ...botón datos y otros...
   const btnDatos = document.getElementById("btnDatos");
   if (btnDatos) {
@@ -185,11 +191,10 @@ document.addEventListener("DOMContentLoaded", () => {
 // ---------------------------
 document.getElementById("btnPDF").addEventListener("click", () => {
   // Cargar las tablas en memoria
-  const aciertos = document.querySelector("#tablaAciertos table");
-  const fallas = document.querySelector("#tablaFallas table");
-
-  if (!aciertos && !fallas) {
-    alert("No hay tablas para exportar.");
+  const tablaAciertos = document.querySelector("#tablaAciertos table");
+  const tablaFallas = document.querySelector("#tablaFallas table");
+  if (!tablaAciertos && !tablaFallas) {
+    alert("No hay registros para exportar.");
     return;
   }
 
@@ -197,41 +202,50 @@ document.getElementById("btnPDF").addEventListener("click", () => {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
 
-  doc.setFontSize(18);
-  doc.text("Registro de Juegos", 40, 40);
-
-  let y = 70;
-
   // Función auxiliar para convertir tabla HTML en array
   const tableToArray = (table) => {
+    if (!table) return { head: [], body: [] };
     const rows = Array.from(table.querySelectorAll("tr"));
-    return rows.map(row => Array.from(row.querySelectorAll("th, td")).map(cell => cell.innerText));
+    const data = rows.map(row => Array.from(row.querySelectorAll("th, td")).map(cell => cell.innerText));
+    return {
+      head: [data[0]],
+      body: data.slice(1)
+    };
   };
 
-  // ACIERTOS
-  if (aciertos) {
+  let yPos = 40;
+
+  // Título principal
+  doc.setFontSize(18);
+  doc.text("Registro de Juegos", 40, yPos);
+  yPos += 40;
+
+  // Tabla de Aciertos
+  if (tablaAciertos) {
     doc.setFontSize(14);
-    doc.text("✅ ACIERTOS", 40, y);
-    y += 10;
+    doc.text("Aciertos ✓", 40, yPos);
+    yPos += 20;
+    const dataAciertos = tableToArray(tablaAciertos);
     doc.autoTable({
-      startY: y + 10,
-      head: [tableToArray(aciertos.querySelector("thead"))[0]],
-      body: tableToArray(aciertos.querySelector("tbody")),
+      startY: yPos,
+      head: dataAciertos.head,
+      body: dataAciertos.body,
       styles: { fontSize: 9, halign: "center" },
       theme: "grid"
     });
-    y = doc.lastAutoTable.finalY + 30;
+    yPos = doc.lastAutoTable.finalY + 30;
   }
 
-  // FALLAS
-  if (fallas) {
+  // Tabla de Fallas
+  if (tablaFallas) {
     doc.setFontSize(14);
-    doc.text("❌ FALLAS", 40, y);
-    y += 10;
+    doc.text("Fallas ✗", 40, yPos);
+    yPos += 20;
+    const dataFallas = tableToArray(tablaFallas);
     doc.autoTable({
-      startY: y + 10,
-      head: [tableToArray(fallas.querySelector("thead"))[0]],
-      body: tableToArray(fallas.querySelector("tbody")),
+      startY: yPos,
+      head: dataFallas.head,
+      body: dataFallas.body,
       styles: { fontSize: 9, halign: "center" },
       theme: "grid"
     });
@@ -240,4 +254,3 @@ document.getElementById("btnPDF").addEventListener("click", () => {
   // Descargar
   doc.save("registro_juegos.pdf");
 });
-
