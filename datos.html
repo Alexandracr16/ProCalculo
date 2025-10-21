@@ -34,13 +34,17 @@
     </section>
     <section class="registro-juegos-section">
       <h2>Registro de Juegos</h2>
-      <div id="tablaJuegos"></div>
+      <div id="tablaAciertos"></div>
+      <div id="tablaFallas"></div>
     </section>
     <button id="btnVolver" style="margin-top: 20px;">Volver</button>
+    <button id="btnPDF" style="margin-top: 10px;">Generar PDF</button>
   </div>
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
   <script>
     // Este botón regresa al inicio
+    
     document.getElementById("btnVolver").addEventListener("click", () => {
       window.location.href = "index.html"; // o el nombre de tu página principal
     });

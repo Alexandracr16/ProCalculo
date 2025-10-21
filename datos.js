@@ -93,41 +93,60 @@ async function cargarMovimientos() {
     });
   }
 }
-
+function seleccionarPregunta(id) {
+  localStorage.setItem("preguntaActivaId", id);
+  alert("Pregunta seleccionada para la próxima mesa");
+}
 // Inicializar todo al cargar
 
 function mostrarJuegos() {
-  const tablaJuegos = document.getElementById("tablaJuegos");
-  tablaJuegos.innerHTML = "";
+  const contAciertos = document.getElementById("tablaAciertos");
+  const contFallas = document.getElementById("tablaFallas");
+  contAciertos.innerHTML = "";
+  contFallas.innerHTML = "";
+
   const juegos = JSON.parse(localStorage.getItem("juegos") || "[]");
   if (juegos.length === 0) {
-    tablaJuegos.innerHTML = "<p>No hay registros de juegos.</p>";
+    contAciertos.innerHTML = "<p>No hay registros de juegos.</p>";
+    contFallas.innerHTML = "<p>No hay registros de juegos.</p>";
     return;
   }
-  const table = document.createElement("table");
-  table.style.margin = "20px auto";
-  table.style.width = "95%";
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>Grupo</th>
-        <th>Jugadores</th>
-        <th>Jugador</th>
-        <th>Tiempo (s)</th>
-        <th>Palabra</th>
-        <th>Posición</th>
-        <th>Letra</th>
-        <th>Correcta</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = table.querySelector("tbody");
+
+  // Crear tablas para aciertos y fallas
+  const crearTabla = (titulo) => {
+    const div = document.createElement("div");
+    div.innerHTML = `<h3>${titulo}</h3>`;
+    const table = document.createElement("table");
+    table.style.margin = "10px auto";
+    table.style.width = "95%";
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Grupo</th>
+          <th>Jugadores</th>
+          <th>Jugador</th>
+          <th>Tiempo (s)</th>
+          <th>Palabra</th>
+          <th>Posición</th>
+          <th>Letra</th>
+          <th>Correcta</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    div.appendChild(table);
+    return { div, tbody: table.querySelector("tbody") };
+  };
+
+  const aciertos = crearTabla("✅ ACIERTOS");
+  const fallas = crearTabla("❌ FALLAS");
+
   const jugadoresRegistrados = localStorage.getItem("jugadores") || "-";
+
   juegos.forEach(j => {
     if (j.posiciones && Array.isArray(j.posiciones)) {
       j.posiciones.forEach(pos => {
-        tbody.innerHTML += `
+        const fila = `
           <tr>
             <td>${j.grupo || "-"}</td>
             <td>${jugadoresRegistrados}</td>
@@ -139,25 +158,16 @@ function mostrarJuegos() {
             <td>${pos.correcta ? '✅' : '❌'}</td>
           </tr>
         `;
+        if (pos.correcta) aciertos.tbody.innerHTML += fila;
+        else fallas.tbody.innerHTML += fila;
       });
-    } else {
-      // Fallback para registros viejos
-      tbody.innerHTML += `
-        <tr>
-          <td>${j.grupo || "-"}</td>
-          <td>${jugadoresRegistrados}</td>
-          <td>${j.jugador}</td>
-          <td>${j.tiempo}</td>
-          <td>${j.palabra}</td>
-          <td>-</td>
-          <td>${j.ingresadas || '-'}</td>
-          <td>-</td>
-        </tr>
-      `;
     }
   });
-  tablaJuegos.appendChild(table);
+
+  contAciertos.appendChild(aciertos.div);
+  contFallas.appendChild(fallas.div);
 }
+
 
 document.addEventListener("DOMContentLoaded", () => {
   mostrarJuegos();
@@ -170,4 +180,64 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+// ---------------------------
+// GENERAR PDF CON DATOS
+// ---------------------------
+document.getElementById("btnPDF").addEventListener("click", () => {
+  // Cargar las tablas en memoria
+  const aciertos = document.querySelector("#tablaAciertos table");
+  const fallas = document.querySelector("#tablaFallas table");
+
+  if (!aciertos && !fallas) {
+    alert("No hay tablas para exportar.");
+    return;
+  }
+
+  // Crear el documento PDF
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+
+  doc.setFontSize(18);
+  doc.text("Registro de Juegos", 40, 40);
+
+  let y = 70;
+
+  // Función auxiliar para convertir tabla HTML en array
+  const tableToArray = (table) => {
+    const rows = Array.from(table.querySelectorAll("tr"));
+    return rows.map(row => Array.from(row.querySelectorAll("th, td")).map(cell => cell.innerText));
+  };
+
+  // ACIERTOS
+  if (aciertos) {
+    doc.setFontSize(14);
+    doc.text("✅ ACIERTOS", 40, y);
+    y += 10;
+    doc.autoTable({
+      startY: y + 10,
+      head: [tableToArray(aciertos.querySelector("thead"))[0]],
+      body: tableToArray(aciertos.querySelector("tbody")),
+      styles: { fontSize: 9, halign: "center" },
+      theme: "grid"
+    });
+    y = doc.lastAutoTable.finalY + 30;
+  }
+
+  // FALLAS
+  if (fallas) {
+    doc.setFontSize(14);
+    doc.text("❌ FALLAS", 40, y);
+    y += 10;
+    doc.autoTable({
+      startY: y + 10,
+      head: [tableToArray(fallas.querySelector("thead"))[0]],
+      body: tableToArray(fallas.querySelector("tbody")),
+      styles: { fontSize: 9, halign: "center" },
+      theme: "grid"
+    });
+  }
+
+  // Descargar
+  doc.save("registro_juegos.pdf");
+});
 

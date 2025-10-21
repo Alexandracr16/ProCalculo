@@ -24,7 +24,56 @@ let letrasIngresadas = Array.from(letras).fill("_");
 let juegoFinalizado = false;
 
 // Palabra correcta a adivinar
-const respuestaCorrecta = "PLANETA"; // <-- puedes cambiarla
+// ----------------------
+// Palabra correcta desde IndexedDB
+// ----------------------
+let respuestaCorrecta = "";
+let preguntaTexto = "";
+
+async function cargarPreguntaActiva() {
+  const id = localStorage.getItem("preguntaActivaId");
+  if (!id) {
+    alert("⚠️ No se ha seleccionado una pregunta en los datos. Ve a datos.html y elige una.");
+    window.location.href = "datos.html";
+    return;
+  }
+
+  const pregunta = await DB.getPreguntaById(Number(id));
+  if (!pregunta) {
+    alert("❌ No se encontró la pregunta en la base de datos.");
+    window.location.href = "datos.html";
+    return;
+  }
+
+  preguntaTexto = pregunta.pregunta;
+  respuestaCorrecta = pregunta.respuesta.toUpperCase().trim();
+
+  // Sincronizar longitud de letras
+  letrasIngresadas = Array(respuestaCorrecta.length).fill("_");
+
+  document.querySelector(".titulo").textContent = `Adivina: ${preguntaTexto}`;
+
+  letras.forEach((el, i) => {
+    if (i < respuestaCorrecta.length) {
+      el.textContent = "_";
+      el.style.display = "inline-block";
+    } else {
+      el.style.display = "none";
+    }
+  });
+
+  // Marcar la primera posición seleccionada
+  letraActual = 0;
+  letras[0].classList.add("letra-seleccionada");
+
+
+  
+}
+
+
+// Ejecutar al cargar la página
+document.addEventListener("DOMContentLoaded", cargarPreguntaActiva);
+
 
 // ----------------------
 // Obtener datos del grupo y jugadores desde URL
@@ -86,22 +135,12 @@ function detenerTiempo() {
 // ----------------------
 botones.forEach(btn => {
   btn.addEventListener("click", () => {
-    if (jugadorActivo) {
-      alert(`Ya está jugando: ${jugadorActivo}`);
-      return;
-    }
-
     jugadorActivo = btn.textContent;
     turnoTxt.textContent = `Turno de: ${jugadorActivo}`;
 
-    // Visual
+    // Visual: resaltar jugador activo
     botones.forEach(b => b.classList.remove("jugador-activo"));
     btn.classList.add("jugador-activo");
-
-    // Deshabilitar los demás
-    botones.forEach(b => {
-      if (b !== btn) b.disabled = true;
-    });
   });
 });
 
@@ -110,24 +149,80 @@ botones.forEach(btn => {
 // ----------------------
 
 let letraActual = 0;
+
+// Permitir seleccionar posición haciendo clic
+letras.forEach((el, i) => {
+  el.addEventListener("click", () => {
+    letraActual = i;
+    letras.forEach(l => l.classList.remove("letra-seleccionada"));
+    el.classList.add("letra-seleccionada");
+  });
+});
+
+// Escuchar teclas
 document.addEventListener("keydown", (e) => {
-  if (juegoFinalizado) return;
-  if (!jugadorActivo) return;
-  if (letraActual >= respuestaCorrecta.length) return;
+  if (!jugadorActivo) {
+    alert("Selecciona un jugador antes de escribir.");
+    return;
+  }
+
   const key = e.key.toUpperCase();
+
+  // Si es una letra válida
   if (key.length === 1 && key.match(/[A-ZÑÁÉÍÓÚÜ]/)) {
     if (!intervalo) iniciarTiempo();
     letrasIngresadas[letraActual] = key;
     letras[letraActual].textContent = key;
-    letraActual++;
-    letrasCompletadas++;
-    if (letrasCompletadas === respuestaCorrecta.length) {
-      detenerTiempo();
-      juegoFinalizado = true;
-      setTimeout(mostrarResultadoFinal, 300); // Espera breve antes de mostrar ventana
-    }
+
+    // Avanza automáticamente
+    letraActual = (letraActual + 1) % respuestaCorrecta.length;
+    verificarEstadoPalabra();
+  }
+
+  // Permitir borrar con Backspace
+  if (e.key === "Backspace") {
+    letrasIngresadas[letraActual] = "_";
+    letras[letraActual].textContent = "_";
+    verificarEstadoPalabra();
+  }
+
+  // Mover con flechas
+  if (e.key === "ArrowRight") {
+    letraActual = (letraActual + 1) % respuestaCorrecta.length;
+  }
+  if (e.key === "ArrowLeft") {
+    letraActual = (letraActual - 1 + respuestaCorrecta.length) % respuestaCorrecta.length;
   }
 });
+
+function verificarEstadoPalabra() {
+  if (!respuestaCorrecta) return;
+
+  letras.forEach((letraEl, i) => {
+    const letraIngresada = letrasIngresadas[i] || "_";
+    if (letraIngresada === "_") {
+      letraEl.classList.remove("ok", "error");
+    } else if (letraIngresada === respuestaCorrecta[i]) {
+      letraEl.classList.add("ok");
+      letraEl.classList.remove("error");
+    } else {
+      letraEl.classList.add("error");
+      letraEl.classList.remove("ok");
+    }
+  });
+
+  // Verificar si todas las letras son correctas
+  const todasCorrectas = letrasIngresadas.every(
+    (letra, i) => letra === respuestaCorrecta[i]
+  );
+
+  if (todasCorrectas && !juegoFinalizado) {
+    detenerTiempo();
+    juegoFinalizado = true;
+    mostrarResultadoFinal();
+  }
+}
+
 
 // ----------------------
 // Mostrar resultado final
